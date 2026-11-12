@@ -1,0 +1,41 @@
+
+# Dataset - never upload
+dataset/
+
+# Python virtual environments
+.venv/
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Model weights and checkpoints
+*.pth
+*.pt
+*.ckpt
+*.onnx
+checkpoints/
+
+# Generated reports and temporary outputs
+htr/reports/
+
+# Logs
+*.log
+
+# Local environment variables and secrets
+.env
+.env.*
+
+# IDE and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Experiment virtual environments
+experiments/venv/
+
+# Empty/incomplete experiment
+experiments/ocr_benchmark/
