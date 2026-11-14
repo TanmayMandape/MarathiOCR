@@ -4,6 +4,7 @@ from pathlib import Path
 
 import torch
 from torch.utils.data import DataLoader
+from PIL import Image
 
 # Add project root and scripts directory to Python path
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -75,8 +76,8 @@ def test_real_batch():
 
     model.eval()
 
-    with torch.no_grad():
-        predictions = model(images.to(device))
+    predictions = model(images.to(device))
+    
 
     print("\nMODEL OUTPUT")
     print("Output shape:", predictions.shape)
@@ -107,3 +108,112 @@ def test_real_batch():
 
 if __name__ == "__main__":
     test_real_batch()
+
+
+def validate_ctc_feasibility(annotation_file, dataset_root, vocabulary):
+
+    print("\n" + "=" * 55)
+    print("CTC FEASIBILITY VALIDATION")
+    print("=" * 55)
+
+    total_samples = 0
+    feasible_samples = 0
+    infeasible_samples = 0
+
+    min_margin = float("inf")
+    worst_samples = []
+
+    with open(annotation_file, "r", encoding="utf-8-sig") as file:
+
+        for line_number, line in enumerate(file, start=1):
+
+            line = line.rstrip("\r\n")
+
+            if not line:
+                continue
+
+            parts = line.split("\t", maxsplit=1)
+
+            if len(parts) != 2:
+                raise ValueError(f"Invalid annotation at line {line_number}")
+
+            relative_path, text = parts
+            image_path = dataset_root / relative_path
+
+            # Read image dimensions without loading image pixels
+            with Image.open(image_path) as image:
+                original_width, original_height = image.size
+
+            # Reproduce the width calculation from preprocess.py
+            resized_width = round(
+                original_width * 64 / original_height
+            )
+
+            padded_width = ((resized_width + 31) // 32) * 32
+
+            # CNN reduces width by a factor of 4
+            input_length = padded_width // 4
+
+            # Encode transcription
+            target = vocabulary.encode(text)
+
+            target_length = len(target)
+
+            # Count adjacent repeated character IDs
+            repeated_count = sum(
+                target[i] == target[i - 1]
+                for i in range(1, target_length)
+            )
+
+            # Minimum CTC time steps required
+            minimum_required = target_length + repeated_count
+
+            margin = input_length - minimum_required
+
+            total_samples += 1
+            min_margin = min(min_margin, margin)
+
+            if margin >= 0:
+                feasible_samples += 1
+            else:
+                infeasible_samples += 1
+
+                if len(worst_samples) < 10:
+                    worst_samples.append({
+                        "line": line_number,
+                        "text": text,
+                        "input_length": input_length,
+                        "required": minimum_required,
+                        "margin": margin
+                    })
+
+    print("\nTOTAL SAMPLES:", total_samples)
+    print("CTC FEASIBLE:", feasible_samples)
+    print("CTC INFEASIBLE:", infeasible_samples)
+    print("Minimum sequence margin:", min_margin)
+
+    if worst_samples:
+        print("\nINFEASIBLE SAMPLE EXAMPLES:")
+
+        for sample in worst_samples:
+            print(sample)
+
+    print("\nCTC FEASIBILITY TEST:",
+          "PASSED" if infeasible_samples == 0 else "FAILED")
+
+    return infeasible_samples == 0
+
+vocabulary = build_vocabulary()
+dataset_root = PROJECT_ROOT / "dataset" / "marathi"
+annotation_file = dataset_root / "file" / "train_gt.txt"
+
+ctc_feasible = validate_ctc_feasibility(
+    annotation_file,
+    dataset_root,
+    vocabulary
+)
+
+if not ctc_feasible:
+    raise RuntimeError(
+        "Some training samples are not feasible for CTC."
+    )
